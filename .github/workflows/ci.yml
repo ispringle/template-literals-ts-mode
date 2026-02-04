@@ -1,50 +1,24 @@
-name: CI
+name: Lint
 
 on:
-  push:
-    branches: [ master ]
   pull_request:
-    branches: [ master ]
+    paths:
+      - '**.el'
+      - '**lint.yml'
+  push:
+    paths:
+      - '**.el'
+      - '**lint.yml'
 
 jobs:
-  test:
+  lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Setup Emacs
-        uses: purcell/setup-emacs@master
+      - uses: actions/checkout@v2
+      - name: "Install Emacs and everything needed for makem"
+        uses: emacs-magus/setup-makem@master
         with:
-          version: '30.1'
-      
-      - name: Install dependencies
-        run: |
-          emacs --batch --eval "(package-initialize)" \
-            --eval "(add-to-list 'package-archives '(\"melpa\" . \"https://melpa.org/packages/\") t)" \
-            --eval "(package-refresh-contents)" \
-            --eval "(package-install 'package-lint)"
-      
-      - name: Run checkdoc
-        run: |
-          emacs --batch \
-            --eval "(require 'checkdoc)" \
-            --eval "(checkdoc-file \"template-literals-ts-mode.el\")" \
-            --eval "(when (and (boundp 'checkdoc-diagnostic-buffer) checkdoc-diagnostic-buffer (buffer-live-p checkdoc-diagnostic-buffer) (> (buffer-size checkdoc-diagnostic-buffer) 0)) (with-current-buffer checkdoc-diagnostic-buffer (princ (buffer-string))) (kill-emacs 1))" \
-            --eval "(kill-emacs 0)"
-      
-      - name: Run package-lint
-        run: |
-          emacs --batch \
-            --eval "(package-initialize)" \
-            --eval "(add-to-list 'package-archives '(\"melpa\" . \"https://melpa.org/packages/\") t)" \
-            --eval "(require 'package-lint)" \
-            --eval "(package-lint-batch-and-exit \"template-literals-ts-mode.el\")"
-      
-      - name: Byte compile
-        run: |
-          emacs --batch \
-            --eval "(add-to-list 'load-path \".\")" \
-            --eval "(batch-byte-compile \"template-literals-ts-mode.el\")" \
-            --eval "(when (not (file-exists-p \"template-literals-ts-mode.elc\")) (kill-emacs 1))" \
-            --eval "(kill-emacs 0)"
-
+          emacs_version: 28.1
+          os: ubuntu-latest
+      - name: Lint
+        run: make lint
