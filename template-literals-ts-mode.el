@@ -68,7 +68,10 @@
      (t template-literals-ts--host-language))))
 
 (defun template-literals-ts--template-base-column ()
-  "Get the base indentation column for the current template string."
+  "Get the base indentation column for the current template string.
+Finds the template_string node containing point, then calculates
+the indentation of the opening backtick plus one indent unit.
+Returns nil if not inside a template string."
   (save-excursion
     (let ((host-parser (seq-find (lambda (p)
                                    (eq (treesit-parser-language p)
@@ -84,11 +87,13 @@
         (back-to-indentation)
         (+ (current-column)
            (pcase template-literals-ts--host-language
-             ('typescript typescript-ts-mode-indent-offset)
-             (_ js-indent-level)))))))
+             ('typescript (or typescript-ts-mode-indent-offset 2))
+             (_ (or js-indent-level 2))))))))
 
 (defun template-literals-ts--in-template-p ()
-  "Return t if point is inside template string content, nil if on opening line."
+  "Return t if point is inside template string content, nil if on opening line.
+This distinguishes between being on the line with the opening backtick
+versus being inside the actual template content, which affects indentation."
   (let ((host-parser (seq-find (lambda (p)
                                  (eq (treesit-parser-language p)
                                      template-literals-ts--host-language))
@@ -102,7 +107,21 @@
          (line-number-at-pos (treesit-node-start template))))))
 
 (defun template-literals-ts--calculate-indent ()
-  "Calculate indentation for CSS/HTML inside template literals."
+  "Calculate indentation for CSS/HTML inside template literals.
+Returns the indentation offset in columns based on the tree-sitter
+parse tree structure.
+
+For CSS:
+- Counts nested 'block' nodes to determine depth
+- Adds extra indent for properties inside rule sets
+- Decreases depth for closing braces
+
+For HTML:
+- Counts nested 'element' nodes to determine depth
+- Skips the root document element for tag nodes
+
+The indentation unit is determined by css-indent-offset for CSS
+and sgml-basic-offset for HTML, defaulting to 2 if not set."
   (let* ((lang (treesit-language-at (point)))
          (indent-unit (pcase lang
                         ('css css-indent-offset)
@@ -131,7 +150,7 @@
         (when (member type (pcase lang
                              ('css '("block"))
                              ('html '("element"))))
-          ;; For HTML: skip rnoot element only for tag nodes, not content
+          ;; For HTML: skip root element only for tag nodes, not content
           (unless (and (eq lang 'html)
                        (equal type "element")
                        (equal (treesit-node-type grandparent) "document")
@@ -152,7 +171,11 @@
     (* indent-unit depth)))
 
 (defun template-literals-ts--indent-line ()
-  "Indent line for template literals with embedded CSS/HTML."
+  "Indent line for template literals with embedded CSS/HTML.
+If point is inside a CSS or HTML template literal, calculates
+indentation as the sum of the template's base column and the
+inner language's indentation. Otherwise, falls back to the
+standard treesit-indent function."
   (treesit-update-ranges)
   (let ((lang (treesit-language-at (point))))
     (if (and (memq lang '(css html))
