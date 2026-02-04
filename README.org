@@ -5,6 +5,8 @@ JavaScript/TypeScript tagged template literals.
 
 Works with =html`...`= and =css`...`= tags as used by Lit and similar libraries.
 
+[[file:screenshot.png]]
+
 ** Requirements
 
 - Emacs 30+
