@@ -4,7 +4,7 @@
 
 ;; Author: Ian S. Pringle
 ;; Version: 0.1.0
-;; Package-Requires: ((emacs "30.0"))
+;; Package-Requires: ((emacs "30.1"))
 ;; Keywords: languages, javascript, typescript, tree-sitter
 ;; URL: https://github.com/ispringle/template-literals-ts-mode
 ;; License: 0BSD
