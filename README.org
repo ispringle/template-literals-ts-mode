@@ -1,0 +1,31 @@
+* template-literals-ts-mode
+
+Tree-sitter based syntax highlighting and indentation for HTML and CSS inside
+JavaScript/TypeScript tagged template literals.
+
+Works with =html`...`= and =css`...`= tags as used by Lit and similar libraries.
+
+** Requirements
+
+- Emacs 30+
+- Tree-sitter grammars: =javascript=, =typescript=, =css=, =html=
+
+** Installation
+
+*** use-package with elpaca
+
+#+begin_src emacs-lisp
+(use-package template-literals-ts-mode
+  :ensure (:host github :repo "ispringle/template-literals-ts-mode")
+  :hook ((js-ts-mode . template-literals-ts-mode)
+         (typescript-ts-mode . template-literals-ts-mode)))
+#+end_src
+
+*** use-package with built-in vc
+
+#+begin_src emacs-lisp
+(use-package template-literals-ts-mode
+  :vc (:fetcher github :repo "ispringle/template-literals-ts-mode")
+  :hook ((js-ts-mode . template-literals-ts-mode)
+         (typescript-ts-mode . template-literals-ts-mode)))
+#+end_src
