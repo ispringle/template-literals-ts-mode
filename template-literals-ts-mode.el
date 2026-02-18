@@ -1,7 +1,7 @@
 ;;; template-literals-ts-mode.el --- Tree-sitter support for HTML/CSS in JS/TS template literals -*- lexical-binding: t; -*-
 
 ;; Author: Ian S. Pringle <ian@dapringles.org>
-;; Version: 0.1.0
+;; Version: 0.2.0
 ;; Package-Requires: ((emacs "30.1"))
 ;; Keywords: languages, javascript, typescript, tree-sitter
 ;; URL: https://github.com/ispringle/template-literals-ts-mode
@@ -64,6 +64,20 @@ To add SQL support, for example:
   (add-to-list \\='template-literals-ts-tag-grammar-alist
                \\='(\"sql\" . sql))"
   :type '(alist :key-type string :value-type symbol)
+  :group 'template-literals-ts)
+
+(defcustom template-literals-ts-grammar-style-alist
+  '((css . css) (html . html) (lit-html . html))
+  "Alist mapping grammar symbols to their style for indent and font-lock.
+The style determines indentation and which font-lock rules are applied:
+- `css': Uses `css-indent-offset', counts \"block\" nodes for depth,
+  fontifies selectors and properties
+- `html': Uses `sgml-basic-offset', counts \"element\" nodes for depth,
+  fontifies tags, attributes, and attribute values
+
+Grammars not listed here get no font-lock rules and fall back to a
+default indent of 2 with no depth tracking."
+  :type '(alist :key-type symbol :value-type (choice (const css) (const html)))
   :group 'template-literals-ts)
 
 (defvar-local template-literals-ts--host-language nil
@@ -134,21 +148,24 @@ versus being inside the actual template content, which affects indentation."
 (defun template-literals-ts--calculate-indent ()
   "Calculate indentation for CSS/HTML inside template literals.
 Returns the indentation offset in columns based on the tree-sitter
-parse tree structure.
+parse tree structure.  The indent style for each grammar is looked
+up in `template-literals-ts-grammar-style-alist'.
 
-For CSS:
+For css style:
 - Counts nested 'block' nodes to determine depth
 - Adds extra indent for properties inside rule sets
 - Decreases depth for closing braces
 
-For HTML:
+For html style:
 - Counts nested 'element' nodes to determine depth
 - Skips the root document element for tag nodes
 
-The indentation unit is determined by css-indent-offset for CSS
-and sgml-basic-offset for HTML, defaulting to 2 if not set."
+The indentation unit is determined by css-indent-offset for css
+style and sgml-basic-offset for html style, defaulting to 2 if
+the grammar has no entry in the alist."
   (let* ((lang (treesit-language-at (point)))
-         (indent-unit (pcase lang
+         (style (alist-get lang template-literals-ts-grammar-style-alist))
+         (indent-unit (pcase style
                         ('css css-indent-offset)
                         ('html sgml-basic-offset)
                         (_ 2)))
@@ -172,25 +189,25 @@ and sgml-basic-offset for HTML, defaulting to 2 if not set."
             (grandparent (treesit-node-parent parent)))
         (when (equal type "rule_set")
           (setq in-rule-set t))
-        (when (member type (pcase lang
+        (when (member type (pcase style
                              ('css '("block"))
                              ('html '("element"))))
           ;; For HTML: skip root element only for tag nodes, not content
-          (unless (and (eq lang 'html)
+          (unless (and (eq style 'html)
                        (equal type "element")
                        (equal (treesit-node-type grandparent) "document")
                        (member node-type '("<" ">" "</" "/>" "tag_name")))
             (setq depth (1+ depth))
             (setq found-block t))))
       (setq parent (treesit-node-parent parent)))
-    (when (and (eq lang 'css)
+    (when (and (eq style 'css)
                in-rule-set
                (not found-block)
                (not (member node-type
                             '("class_selector" "id_selector" "tag_name"
                               "." "#" "selectors" "class_name"))))
       (setq depth 1))
-    (when (and (eq lang 'css)
+    (when (and (eq style 'css)
                (equal node-type "}"))
       (setq depth (1- depth)))
     (* indent-unit depth)))
@@ -244,37 +261,41 @@ standard treesit-indent function."
               #'template-literals-ts--language-at-point)
   (setq-local indent-line-function #'template-literals-ts--indent-line)
 
-  ;; Add font-lock rules for known grammars
-  (let ((grammars (mapcar #'cdr template-literals-ts-tag-grammar-alist))
-        (new-rules '()))
-    (when (memq 'css grammars)
-      (setq new-rules
-            (append new-rules
-                    (treesit-font-lock-rules
-                     :language 'css
-                     :feature 'selector
-                     :override t
-                     '((class_selector (class_name) @font-lock-type-face)
-                       (id_selector (id_name) @font-lock-keyword-face)
-                       (tag_name) @font-lock-function-name-face)
-                     :language 'css
-                     :feature 'property
-                     :override t
-                     '((property_name) @font-lock-property-name-face
-                       (plain_value) @font-lock-constant-face
-                       (color_value) @font-lock-constant-face
-                       (integer_value) @font-lock-number-face
-                       (float_value) @font-lock-number-face)))))
-    (when (memq 'html grammars)
-      (setq new-rules
-            (append new-rules
-                    (treesit-font-lock-rules
-                     :language 'html
-                     :feature 'tag
-                     :override t
-                     '((tag_name) @font-lock-function-name-face
-                       (attribute_name) @font-lock-property-name-face
-                       (quoted_attribute_value) @font-lock-string-face)))))
+  ;; Add font-lock rules for each configured grammar based on its
+  ;; indent style in `template-literals-ts-grammar-style-alist'.
+  (let ((new-rules '()))
+    (dolist (entry template-literals-ts-tag-grammar-alist)
+      (let* ((grammar (cdr entry))
+             (style (alist-get grammar template-literals-ts-grammar-style-alist)))
+        (pcase style
+          ('css
+           (setq new-rules
+                 (append new-rules
+                         (treesit-font-lock-rules
+                          :language grammar
+                          :feature 'selector
+                          :override t
+                          '((class_selector (class_name) @font-lock-type-face)
+                            (id_selector (id_name) @font-lock-keyword-face)
+                            (tag_name) @font-lock-function-name-face)
+                          :language grammar
+                          :feature 'property
+                          :override t
+                          '((property_name) @font-lock-property-name-face
+                            (plain_value) @font-lock-constant-face
+                            (color_value) @font-lock-constant-face
+                            (integer_value) @font-lock-number-face
+                            (float_value) @font-lock-number-face)))))
+          ('html
+           (setq new-rules
+                 (append new-rules
+                         (treesit-font-lock-rules
+                          :language grammar
+                          :feature 'tag
+                          :override t
+                          '((tag_name) @font-lock-function-name-face
+                            (attribute_name) @font-lock-property-name-face
+                            (quoted_attribute_value) @font-lock-string-face))))))))
     (when new-rules
       (setq-local treesit-font-lock-settings
                   (append treesit-font-lock-settings new-rules))))

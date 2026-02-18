@@ -1,16 +1,18 @@
 * template-literals-ts-mode
 
-Tree-sitter based syntax highlighting and indentation for HTML and CSS inside
-JavaScript/TypeScript tagged template literals.
+Tree-sitter based syntax highlighting and indentation for embedded languages
+inside JavaScript/TypeScript tagged template literals.
 
-Works with =html`...`= and =css`...`= tags as used by Lit and similar libraries.
+Works with =html`...`= and =css`...`= tags as used by Lit and similar
+libraries, and is extensible to other grammars.
 
 [[file:screenshot.png]]
 
 ** Requirements
 
 - Emacs 30+
-- Tree-sitter grammars: =javascript=, =typescript=, =css=, =html=
+- Tree-sitter grammars: =javascript=, =typescript=, and grammars for each
+  embedded language you configure (=css= and =html= by default)
 
 ** Installation
 
@@ -31,3 +33,95 @@ Works with =html`...`= and =css`...`= tags as used by Lit and similar libraries.
   :hook ((js-ts-mode . template-literals-ts-mode)
          (typescript-ts-mode . template-literals-ts-mode)))
 #+end_src
+
+** Configuration
+
+*** Tag-to-grammar mapping
+
+=template-literals-ts-tag-grammar-alist= controls which tagged template
+literals are parsed and with which tree-sitter grammar.  The default value is:
+
+#+begin_src emacs-lisp
+'(("html" . html) ("css" . css))
+#+end_src
+
+This means =html`...`= content is parsed with the =html= grammar and
+=css`...`= with the =css= grammar.
+
+To add a new language, push an entry onto the alist:
+
+#+begin_src emacs-lisp
+(add-to-list 'template-literals-ts-tag-grammar-alist '("sql" . sql))
+#+end_src
+
+To swap in a different grammar for an existing tag (e.g. =lit-html= instead of
+=html=), set the alist buffer-locally before enabling the mode:
+
+#+begin_src emacs-lisp
+(setq-local template-literals-ts-tag-grammar-alist
+            '(("html" . lit-html) ("css" . css)))
+(template-literals-ts-mode 1)
+#+end_src
+
+*** Grammar style
+
+=template-literals-ts-grammar-style-alist= maps each grammar symbol to a style
+that determines both indentation and font-lock behavior.  The default value is:
+
+#+begin_src emacs-lisp
+'((css . css) (html . html) (lit-html . html))
+#+end_src
+
+Two styles are supported:
+
+- =css= :: Uses =css-indent-offset= for indentation, counts ="block"= nodes
+  for nesting depth, and fontifies selectors and properties.
+- =html= :: Uses =sgml-basic-offset= for indentation, counts ="element"= nodes
+  for nesting depth, and fontifies tags, attributes, and attribute values.
+
+Grammars not listed in this alist receive no font-lock rules and fall back to a
+fixed indent of 2 with no depth tracking.
+
+If your grammar shares node structure with CSS or HTML, add entries to both
+alists and indentation and font-lock will work automatically:
+
+#+begin_src emacs-lisp
+(add-to-list 'template-literals-ts-tag-grammar-alist '("my-html" . my-html))
+(add-to-list 'template-literals-ts-grammar-style-alist '(my-html . html))
+#+end_src
+
+*** Custom font-lock for other grammars
+
+For grammars that don't fit the =css= or =html= style (e.g. SQL), add the
+tag-to-grammar mapping and then append your own font-lock rules:
+
+#+begin_src emacs-lisp
+(use-package template-literals-ts-mode
+  :hook ((js-ts-mode . template-literals-ts-mode)
+         (typescript-ts-mode . template-literals-ts-mode))
+  :config
+  (add-to-list 'template-literals-ts-tag-grammar-alist '("sql" . sql))
+  :init
+  (defun my/sql-template-font-lock ()
+    (when (bound-and-true-p template-literals-ts-mode)
+      (setq-local treesit-font-lock-settings
+                  (append treesit-font-lock-settings
+                          (treesit-font-lock-rules
+                           :language 'sql
+                           :feature 'keyword
+                           :override t
+                           '((keyword) @font-lock-keyword-face)
+                           :language 'sql
+                           :feature 'type
+                           :override t
+                           '((type) @font-lock-type-face
+                             (column_definition
+                              name: (identifier) @font-lock-variable-name-face)))))
+      (font-lock-flush)))
+  (add-hook 'js-ts-mode-hook #'my/sql-template-font-lock)
+  (add-hook 'typescript-ts-mode-hook #'my/sql-template-font-lock))
+#+end_src
+
+The grammar will get basic parsing and language-at-point support from the alist
+entry.  Indentation falls back to a fixed offset of 2 since no style is
+configured.
